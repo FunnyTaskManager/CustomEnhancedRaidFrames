@@ -8,6 +8,7 @@ local strformat = string.format
 local getGroupDefaults = function(groupType)
 	return {
 		frames = {
+			hidePlayer = false,
 			hideGroupTitles = false,
 			texture = "Blizzard Raid Bar",
 			clickThrough = false,

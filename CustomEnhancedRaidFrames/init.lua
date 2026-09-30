@@ -69,6 +69,101 @@ function ADDON:OnInitialize()
 
 	self:SafeRefresh()
 	self:InitializeBars()
+	self:SetupHidePlayerFrame()
+end
+
+function ADDON:ShouldHidePlayerUnit(unit)
+	if not unit or not self.db or not UnitExists(unit) or not UnitIsUnit(unit, "player") then
+		return false
+	end
+	if GetNumRaidMembers() > 0 then
+		return self.db.profile.raid.frames.hidePlayer
+	elseif GetNumPartyMembers() > 0 then
+		return self.db.profile.party.frames.hidePlayer
+	end
+	return false
+end
+
+function ADDON:AssignPartyUnits(frame)
+	if not frame or InCombatLockdown() then return end
+	local name = frame:GetName()
+	if not name then return end
+	local hide = self.db.profile.party.frames.hidePlayer and GetNumPartyMembers() > 0
+	if hide then
+		for i = 1, MEMBERS_PER_RAID_GROUP do
+			local unit = (i <= 4) and ("party"..i) or nil
+			CompactUnitFrame_SetUnit(_G[name.."Member"..i], unit)
+		end
+	else
+		CompactUnitFrame_SetUnit(_G[name.."Member1"], "player")
+		for i = 2, MEMBERS_PER_RAID_GROUP do
+			CompactUnitFrame_SetUnit(_G[name.."Member"..i], "party"..(i - 1))
+		end
+	end
+end
+
+function ADDON:ApplyHidePlayer()
+	if InCombatLockdown() then
+		self.hidePlayerPending = true
+		return
+	end
+	self.hidePlayerPending = nil
+	if CompactPartyFrame then
+		self:AssignPartyUnits(CompactPartyFrame)
+	end
+	if CompactRaidFrameContainer then
+		CompactRaidFrameContainer_TryUpdate(CompactRaidFrameContainer)
+	end
+	for i = 1, 8 do
+		local group = _G["CompactRaidGroup"..i]
+		if group then
+			CompactRaidGroup_UpdateUnits(group)
+		end
+	end
+end
+
+function ADDON:SetupHidePlayerFrame()
+	local origUpdate = CompactRaidGroup_UpdateUnits
+	local origAdd = CompactRaidFrameContainer_AddUnitFrame
+
+	function CompactRaidGroup_UpdateUnits(frame)
+		if frame and frame:GetName() == "CompactPartyFrame" then
+			ADDON:AssignPartyUnits(frame)
+			return
+		end
+		if not ADDON:ShouldHidePlayerUnit("player") or GetNumRaidMembers() == 0 then
+			return origUpdate(frame)
+		end
+
+		local groupIndex = frame:GetID()
+		local frameIndex = 1
+		for i = 1, GetNumRaidMembers() do
+			local _, _, subgroup = GetRaidRosterInfo(i)
+			local unit = "raid"..i
+			if subgroup == groupIndex and frameIndex <= MEMBERS_PER_RAID_GROUP and not UnitIsUnit(unit, "player") then
+				CompactUnitFrame_SetUnit(_G[frame:GetName().."Member"..frameIndex], unit)
+				frameIndex = frameIndex + 1
+			end
+		end
+		for i = frameIndex, MEMBERS_PER_RAID_GROUP do
+			CompactUnitFrame_SetUnit(_G[frame:GetName().."Member"..i], nil)
+		end
+	end
+
+	function CompactRaidFrameContainer_AddUnitFrame(self, unit, frameType)
+		if ADDON:ShouldHidePlayerUnit(unit) then
+			return
+		end
+		return origAdd(self, unit, frameType)
+	end
+
+	hooksecurefunc("CompactPartyFrame_OnLoad", function(frame)
+		ADDON:AssignPartyUnits(frame)
+	end)
+
+	if CompactPartyFrame then
+		self:AssignPartyUnits(CompactPartyFrame)
+	end
 end
 
 function ADDON:SetupDB()
@@ -156,6 +251,9 @@ function ADDON:OnEvent(event, ...)
 	local groupType = ADDON.GetGroupType()
 
 	if event == "PLAYER_REGEN_ENABLED" then
+		if self.hidePlayerPending then
+			self:ApplyHidePlayer()
+		end
 		for frame in self.IterateCompactFrames(groupType) do
 			if not InCombatLockdown() then
 				self:AddSubFrames(frame, groupType)

@@ -224,6 +224,20 @@ function ADDON:CreateGenericOptionsByType(groupType)
 			name = L["General"],
 			desc = L["General options"],
 			args = {
+				hidePlayer = {
+					order = 0.5,
+					type = "toggle",
+					name = L["Hide Player Frame"],
+					desc = L["Hide Player Frame Desc"],
+					width = 1.5,
+					set = function(info, val)
+						self.db.profile[groupType].frames.hidePlayer = val
+						self:ApplyHidePlayer()
+					end,
+					get = function(info)
+						return self.db.profile[groupType].frames.hidePlayer
+					end
+				},
 				hideGroupTitles = {
 					order = 1,
 					type = "toggle",
